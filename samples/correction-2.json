@@ -1,0 +1,9 @@
+{
+  "batch": "correction-2",
+  "hunks": [
+    {
+      "targets": [["recording", "A"], ["correction-1", "C"]],
+      "replacement": [{"keep": ["correction-1", "C"]}, {"new": ["D", 7]}]
+    }
+  ]
+}
