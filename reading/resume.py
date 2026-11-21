@@ -22,6 +22,23 @@ def initialize_resume_history(connection):
     ''')
 
 
+def _active_successor(connection, volume_id, encoding_id):
+    """Follow replacement history from an issuing encoding to the active one."""
+    seen = {encoding_id}
+    current = encoding_id
+    while True:
+        record = connection.execute(
+            'SELECT new_encoding FROM replacement_history WHERE volume = ? AND old_encoding = ?',
+            (volume_id, current),
+        ).fetchone()
+        if record is None:
+            return current
+        current = record['new_encoding']
+        if current in seen:
+            raise TicketError('encoding replacement history forms a cycle')
+        seen.add(current)
+
+
 def resolve_resume(connection, volume, ticket):
     validate_ticket_volume(ticket, volume.volume_id)
     issuing = get_encoding(connection, ticket.encoding_id)
@@ -35,4 +52,5 @@ def resolve_resume(connection, volume, ticket):
     boundary = info.start + ticket.after
     if not 0 < boundary < issuing.row_count:
         raise TicketError("ticket has no next row in this volume")
-    return ResumePosition(issuing.encoding_id, boundary)
+    encoding_id = _active_successor(connection, volume.volume_id, issuing.encoding_id)
+    return ResumePosition(encoding_id, boundary)

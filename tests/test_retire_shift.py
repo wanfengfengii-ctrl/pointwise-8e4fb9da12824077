@@ -89,6 +89,46 @@ class RetireShiftTests(unittest.TestCase):
         self.assertEqual([row['origin']['line'] for row in self._child('page', self.r2, 5)['rows']], ['C', 'D'])
         self.assertEqual(reconcile(self.root, self.r2).totals, ReadingTotals(2, 0, 18))
 
+    def test_retirement_handoff_incident(self):
+        # INCIDENT.md: the night shift keeps the R1 ticket and QC signs R2
+        # before R0 retires; after the handoff and a reopen every retained
+        # volume must still deliver its original sequence.
+        first = read_page(self.root, self.r1, 1)
+        self.assertEqual(first.rows, (A,))
+        self.assertIsNotNone(first.next_ticket)
+        ticket = first.next_ticket
+        signed = reconcile(self.root, self.r2)
+        self.assertEqual(signed.totals, ReadingTotals(2, 0, 18))
+        self.assertEqual(signed.origins, (OriginEntry(1, C.origin), OriginEntry(2, D.origin)))
+        old = [self._encoding(volume) for volume in (self.r0, self.r1, self.r2)]
+        self.assertEqual(old[2].frames[0].source_encoding, old[1].encoding_id)
+        receipt = retire(self.root, self.r0)
+        initialize(self.root)
+        self.assertEqual(find_retirement_receipt(self.root, self.r0), receipt)
+        with self.assertRaises(VolumeUnavailable):
+            read_page(self.root, self.r0, 5)
+        for encoding in old:
+            self.assertFalse(volume_path(self.root, encoding.encoding_id).exists())
+            for info in encoding.frames:
+                self.assertFalse(frame_path(self.root, FrameAddress(encoding.encoding_id, info.number)).exists())
+        rows_on_disk = []
+        for path in (self.root / 'volumes').glob('*.frame'):
+            rows_on_disk.extend(json.loads(path.read_bytes()).get('rows', ()))
+        self.assertNotIn(['recording', 'B', '7'], rows_on_disk)
+        # R2 reads from the head and reconciles to the same 18 newtons.
+        self.assertEqual(read_page(self.root, self.r2, 5).rows, (C, D))
+        again = reconcile(self.root, self.r2)
+        self.assertEqual(again.totals, ReadingTotals(2, 0, 18))
+        self.assertEqual(again.origins, (OriginEntry(1, C.origin), OriginEntry(2, D.origin)))
+        # The pre-retirement R1 ticket continues at C and reaches the end,
+        # in this process and in a fresh one.
+        tail = read_page(self.root, self.r1, 5, ticket)
+        self.assertEqual(tail.rows, (C,))
+        self.assertIsNone(tail.next_ticket)
+        self.assertEqual(self._child('page', self.r1, 5, ticket), json.loads(json.dumps(asdict(tail))))
+        # The report signed before retirement is unchanged.
+        self.assertEqual(get_report(self.root, signed.report_id), signed)
+
     def test_signed_report_stays_fixed(self):
         signed = reconcile(self.root, self.r2)
         self.assertEqual(signed.totals, ReadingTotals(2, 0, 18))

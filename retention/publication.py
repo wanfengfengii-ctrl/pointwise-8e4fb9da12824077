@@ -1,4 +1,4 @@
-from archive.catalog import drop_encoding, get_encoding, mark_retired, set_active_encoding
+from archive.catalog import get_encoding, mark_retired, set_active_encoding
 from retention.receipts import write_retirement_receipt
 
 
@@ -13,10 +13,12 @@ def publish_retirement(connection, files, scope, replacements, *, before_commit=
         set_active_encoding(connection, item.original.volume_id, item.staged.encoding_id)
     mark_retired(connection, target.volume_id)
     connection.execute("DELETE FROM replacement_history WHERE volume = ?", (target.volume_id,))
+    # Only the physical files of the target and superseded encodings are
+    # removed. Their catalog rows stay so continuation tickets issued against
+    # them keep the issuing frame layout needed to resolve their boundary.
     obsolete = (target_encoding,) + tuple(item.original for item in replacements.items)
     for encoding in obsolete:
         files.remove_encoding(encoding)
-        drop_encoding(connection, encoding.encoding_id)
     receipt = write_retirement_receipt(connection, target.volume_id)
     if before_commit is not None:
         before_commit()

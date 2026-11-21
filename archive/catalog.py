@@ -118,16 +118,6 @@ def get_encoding(connection, encoding_id):
     return EncodingEntry(encoding_id, record['volume'], record['row_count'], frames)
 
 
-def direct_dependents(connection, encoding_id):
-    return tuple(
-        row['id'] for row in connection.execute('''
-            SELECT DISTINCT volume.id
-            FROM frame_catalog AS frame JOIN volumes AS volume ON volume.active = frame.encoding
-            WHERE frame.source_encoding = ? AND volume.retired = 0 ORDER BY volume.id
-        ''', (encoding_id,))
-    )
-
-
 def set_active_encoding(connection, volume_id, encoding_id):
     owner = connection.execute('SELECT volume FROM encodings WHERE id = ?', (encoding_id,)).fetchone()
     if owner is None or owner['volume'] != volume_id:
@@ -143,7 +133,3 @@ def mark_retired(connection, volume_id):
                                 (volume_id,))
     if cursor.rowcount != 1:
         raise VolumeUnavailable(f'volume {volume_id!r} is unavailable')
-
-
-def drop_encoding(connection, encoding_id):
-    connection.execute('DELETE FROM encodings WHERE id = ?', (encoding_id,))
